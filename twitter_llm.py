@@ -4,17 +4,41 @@ import logging
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+import tweepy
+from datetime import datetime, timezone
+import time
 
 load_dotenv()
 
 
 class SimpleTwitterBot:
-    def __init__(self, username, email, password, gemini_api_key):
-        """Initialize the Twitter bot with login credentials and Gemini API"""
+    def __init__(self, username, email, password, gemini_api_key, twitter_credentials):
+        """Initialize the bot with both twikit and official Twitter API"""
+        # Twikit initialization
         self.client = Client("en-US")
         self.username = username
         self.email = email
         self.password = password
+
+        # Twitter API initialization
+        auth = tweepy.OAuthHandler(
+            twitter_credentials["consumer_key"], twitter_credentials["consumer_secret"]
+        )
+        auth.set_access_token(
+            twitter_credentials["access_token"],
+            twitter_credentials["access_token_secret"],
+        )
+        self.twitter_api = tweepy.API(auth)
+        self.twitter_client = tweepy.Client(
+            bearer_token=twitter_credentials["bearer_token"],
+            consumer_key=twitter_credentials["consumer_key"],
+            consumer_secret=twitter_credentials["consumer_secret"],
+            access_token=twitter_credentials["access_token"],
+            access_token_secret=twitter_credentials["access_token_secret"],
+        )
+
+        # Store last checked mention ID
+        self.last_mention_id = None
 
         # Configure Gemini
         genai.configure(api_key=gemini_api_key)
@@ -74,21 +98,33 @@ class SimpleTwitterBot:
             return f"@{author} Thanks for reaching out! 👋"
 
     async def check_mentions(self):
-        """Check and respond to mentions using Gemini"""
+        """Check and respond to mentions using official Twitter API"""
         try:
-            notifications = await self.client.get_notifications(type="Mentions")
+            # Get mentions timeline
+            mentions = self.twitter_api.mentions_timeline(
+                since_id=self.last_mention_id, tweet_mode="extended"
+            )
 
-            for mention in notifications:
-                tweet_text = mention.tweet.text
-                author = mention.tweet.user.screen_name
+            for mention in mentions:
+                # Update last mention ID
+                if self.last_mention_id is None or mention.id > self.last_mention_id:
+                    self.last_mention_id = mention.id
+
+                # Get tweet text and author
+                tweet_text = mention.full_text
+                author = mention.user.screen_name
 
                 # Get AI-generated response
                 response = await self.get_ai_response(tweet_text, author)
 
-                # Reply to the tweet
-                await self.client.create_tweet(text=response, reply_to=mention.tweet.id)
+                # Reply using twikit
+                await self.client.create_tweet(text=response, reply_to=mention.id)
+
                 logging.info(f"Replied to mention from @{author}")
                 print(f"Replied to mention from @{author}")
+
+                # Avoid rate limits
+                await asyncio.sleep(2)
 
         except Exception as e:
             logging.error(f"Error checking mentions: {str(e)}")
@@ -97,7 +133,7 @@ class SimpleTwitterBot:
     async def run_mention_monitor(self, check_interval=60):
         """Continuously monitor mentions"""
         while True:
-            await self.check_mentions()
+            # await self.check_mentions()
             await asyncio.sleep(check_interval)  # Wait for specified interval
 
     async def get_trending_topics(self):
@@ -198,25 +234,95 @@ class SimpleTwitterBot:
             logging.error(f"Error posting trending topics: {str(e)}")
             print(f"Error posting trending topics: {str(e)}")
 
+    async def check_dms(self):
+        """Check and respond to DMs using twikit"""
+        try:
+            # Get your user ID first
+            my_user_id = await self.client.user_id()
+            sender_id = "manikanta918818"
+
+            # Get DM history
+            dm_history = await self.client.get_dm_history(user_id=sender_id)
+
+            for message in dm_history:
+                try:
+
+                    # Get message text and sender
+                    message_text = message.text
+                    # sender = message.sender.screen_name
+
+                    # Generate AI response
+                    response = await self.get_ai_response_dm(
+                        message_text=message_text, sender=sender_id
+                    )
+
+                    # Send DM reply
+                    await self.client.send_dm(user_id=sender_id, text=response)
+
+                    logging.info(f"Replied to DM from @{sender_id}")
+                    print(f"Replied to DM from @{sender_id}")
+
+                    # Avoid rate limits
+                    await asyncio.sleep(2)
+
+                except Exception as e:
+                    logging.error(f"Error processing individual message: {str(e)}")
+                    continue
+
+        except Exception as e:
+            logging.error(f"Error checking DMs: {str(e)}")
+            print(f"Error checking DMs: {str(e)}")
+
+    async def get_ai_response_dm(self, message_text, sender):
+        """Generate AI response for DMs using Gemini"""
+        try:
+            prompt = f"""
+            You are a friendly Twitter bot responding to a direct message.
+            Message: {message_text}
+            Sender: @{sender}
+            
+            Write a helpful and friendly response.
+            Be more detailed than in public tweets since DMs have no character limit.
+            Keep the tone conversational and engaging.
+            """
+
+            response = self.model.generate_content(prompt)
+            return response.text
+
+        except Exception as e:
+            logging.error(f"Error generating DM response: {str(e)}")
+            return f"Hi @{sender}! Thanks for your message. I'm experiencing some technical difficulties right now, but I'll get back to you soon!"
+
+    async def run_dm_monitor(self, check_interval=60):
+        """Continuously monitor DMs"""
+        while True:
+            await self.check_dms()
+            await asyncio.sleep(check_interval)  # Wait for specified interval
+
 
 async def main():
-    # Create bot instance with login credentials
+    # Twitter API credentials
+    twitter_credentials = {
+        "consumer_key": os.getenv("TWITTER_CONSUMER_KEY"),
+        "consumer_secret": os.getenv("TWITTER_CONSUMER_SECRET"),
+        "access_token": os.getenv("TWITTER_ACCESS_TOKEN"),
+        "access_token_secret": os.getenv("TWITTER_ACCESS_TOKEN_SECRET"),
+        "bearer_token": os.getenv("TWITTER_BEARER_TOKEN"),
+    }
+
+    # Create bot instance
     bot = SimpleTwitterBot(
         username=os.getenv("USER_NAME"),
         email=os.getenv("EMAIL"),
         password=os.getenv("PASSWORD"),
         gemini_api_key=os.getenv("GOOGLE_API_KEY"),
+        twitter_credentials=twitter_credentials,
     )
-
-    # Debug print (remove in production)
-    print(f"Username: {os.getenv('USER_NAME')}")
-    print(f"Email: {os.getenv('EMAIL')}")
-    # print(f"Password: {'*' * len(os.getenv('PASSWORD'))}")
 
     try:
         await bot.login()
-        await bot.tweet_trending_topics()
-        await bot.run_mention_monitor()
+        # await bot.tweet_trending_topics()
+        await bot.run_dm_monitor()
     except Exception as e:
         print(f"Error during execution: {str(e)}")
 

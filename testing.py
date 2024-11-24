@@ -1,5 +1,4 @@
 import os
-import random
 import re
 import pickle
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -51,7 +50,7 @@ class GmailMonitor:
 
         # Initialize both models
         self.model = self.setup_gemini()  # For email analysis
-        # self.search_model = self.setup_gemini_with_search()  # For tweet creation
+        self.search_model = self.setup_gemini_with_search()  # For tweet creation
 
     def authenticate(self):
         """Authenticate with Gmail API using OAuth 2.0"""
@@ -84,24 +83,24 @@ class GmailMonitor:
         genai.configure(api_key=GEMINI_API_KEY)
         return genai.GenerativeModel("gemini-1.5-flash")
 
-    # def setup_gemini_with_search(self):
-    #     """Setup Gemini model with Google Search for tweet creation"""
-    #     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    #     genai.configure(api_key=GEMINI_API_KEY)
+    def setup_gemini_with_search(self):
+        """Setup Gemini model with Google Search for tweet creation"""
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        genai.configure(api_key=GEMINI_API_KEY)
 
-    #     # Configure generation parameters
-    #     generation_config = {
-    #         "temperature": 1,
-    #         "top_p": 0.95,
-    #         "top_k": 40,
-    #         "max_output_tokens": 8192,
-    #     }
+        # Configure generation parameters
+        generation_config = {
+            "temperature": 1,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+        }
 
-    #     return genai.GenerativeModel(
-    #         model_name="gemini-1.5-flash",
-    #         generation_config=generation_config,
-    #         tools={"google_search_retrieval": {}},
-    #     )
+        return genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config=generation_config,
+            tools={"google_search_retrieval": {}},
+        )
 
     def is_new_email(self, message_date_str: str) -> bool:
         """Check if email is newer than program start time"""
@@ -230,48 +229,50 @@ class GmailMonitor:
             self.logger.error(f"Error logging in to Twitter: {str(e)}")
             raise e
 
-    async def create_topic_thread(self, topic: str, context: str) -> List[str]:
-        """Generate an informative thread about a specific topic"""
-        try:
-            chat = self.model.start_chat(history=[])
-            prompt = f"""
-            Create a short, engaging Twitter thread about: {topic}
+    async def create_topic_thread(self, topic: str) -> List[str]:
+        """Generate an informative thread about a specific topic using Gemini with Google Search"""
+        # try:
+        chat = self.search_model.start_chat(history=[])
+        prompt = f"""
+        Research and create a comprehensive Twitter thread about: {topic}
 
-            Context from newsletter: {context}
+        Follow these steps:
+        1. Search for the latest news, developments, and different perspectives about this topic
+        2. Analyze the impact and implications
+        3. Include expert opinions or relevant statistics
+        4. Present multiple viewpoints if applicable
+        5. Add context for better understanding
 
-            Requirements:
-            - Each tweet MUST be under 240 characters (strict limit)
-            - Create 3-4 tweets maximum
-            - First tweet should hook readers
-            - Use emojis sparingly (1-2 per tweet)
-            - No markdown or formatting
-            - No URLs or placeholder links
-            - Complete thoughts within each tweet
-            - Tweet as human would tweet
-            - Separate tweets with [TWEET]
+        Requirements for the thread:
+        - Start with a strong hook tweet introducing the topic
+        - Each tweet must be under 280 characters
+        - Include specific details and facts from your research
+        - Cite sources or experts when relevant (using short URLs if needed)
+        - Present a balanced view of the topic
+        - End with key takeaways or future implications
+        - Use emojis strategically for better engagement
+        - Separate each tweet with [TWEET]
 
-            Focus on being concise yet informative.
-            """
+        Make the thread engaging yet informative, focusing on providing value to readers.
+        """
 
-            response = chat.send_message(prompt)
-            tweets = response.text.split("[TWEET]")
-            tweets = [tweet.strip() for tweet in tweets if tweet.strip()]
+        response = chat.send_message(prompt)
+        tweets = response.text.split("[TWEET]")
+        tweets = [tweet.strip() for tweet in tweets if tweet.strip()]
 
-            # Validate tweet lengths and clean up
-            valid_tweets = []
-            for tweet in tweets:
-                # Remove any markdown or formatting
-                clean_tweet = re.sub(r"\*\*|\[|\]|\(\)|\{\}|#", "", tweet)
-                if len(clean_tweet) <= 240:
-                    valid_tweets.append(clean_tweet)
-                else:
-                    print(f"⚠️ Skipping tweet - too long ({len(clean_tweet)} chars)")
+        # Add thread starter if not present
+        if not any("🧵" in tweet for tweet in tweets):
+            tweets.insert(0, f"🚀 Deep dive into: {topic}\n\nA comprehensive thread 🧵")
 
-            return valid_tweets
+        return tweets
 
-        except Exception as e:
-            print(f"❌ Error generating thread: {e}")
-            return []
+        # except Exception as e:
+        #     self.logger.error(f"Error generating thread for topic {topic}: {e}")
+        #     return [
+        #         f"🔍 Important update about {topic}",
+        #         "We're gathering comprehensive information about this topic.",
+        #         "Stay tuned for a detailed thread coming soon! 🧵",
+        #     ]
 
     async def create_newsletter_thread(self, email_data, analysis_json):
         """Create and post Twitter threads for each topic in the newsletter"""
@@ -296,15 +297,7 @@ class GmailMonitor:
                 try:
                     print(f"\n=== Processing Topic: {topic} ===")
                     print("🔎 Researching topic...")
-                    tweets = await self.create_topic_thread(
-                        topic, email_data["content"]
-                    )
-
-                    if not tweets:
-                        print(
-                            f"⏭️ No valid tweets generated for topic: {topic}, moving to next"
-                        )
-                        continue
+                    tweets = await self.create_topic_thread(topic)
 
                     print(f"📝 Generated {len(tweets)} tweets")
                     print("🐦 Posting to Twitter...")
@@ -314,70 +307,46 @@ class GmailMonitor:
                     if success:
                         print(f"✅ Successfully posted thread about: {topic}")
                     else:
-                        print(f"⏭️ Failed to post thread about: {topic}, moving to next")
+                        print(f"❌ Failed to post thread about: {topic}")
 
-                    # Always wait before next topic, regardless of success
                     print("⏳ Waiting 30 seconds before next topic...")
                     await asyncio.sleep(30)
 
                 except Exception as e:
-                    print(
-                        f"⏭️ Error processing topic '{topic}', moving to next: {str(e)}"
-                    )
+                    print(f"❌ Error processing topic {topic}: {str(e)}")
                     continue
 
         except Exception as e:
             print(f"❌ Error creating newsletter threads: {str(e)}")
 
     async def post_thread(self, tweets: List[str]) -> bool:
-        """Post a thread of tweets with improved error handling"""
+        """Post a thread of tweets with improved formatting"""
         try:
             print("\n=== Posting Twitter Thread ===")
             previous_tweet_id = None
 
             for i, tweet in enumerate(tweets):
-                try:
-                    print(f"\n🐦 Posting tweet {i+1}/{len(tweets)}")
+                print(f"\n🐦 Posting tweet {i+1}/{len(tweets)}")
 
-                    # Random delay between tweets
-                    delay = random.uniform(15, 30)
-                    print(f"⏳ Waiting {delay:.1f} seconds before posting...")
-                    await asyncio.sleep(delay)
+                if i > 0 and i < len(tweets) - 1:
+                    tweet = tweet.rstrip() + " ⤵️"
+                elif i == len(tweets) - 1:
+                    tweet = tweet.rstrip() + " 🔚"
 
-                    # If previous tweet was deleted or chain broken, start new thread
-                    if previous_tweet_id:
-                        try:
-                            response = await self.twitter_client.create_tweet(
-                                text=tweet, reply_to=previous_tweet_id
-                            )
-                        except Exception as e:
-                            if "deleted or not visible" in str(e):
-                                print(
-                                    "⚠️ Previous tweet unavailable, starting new chain"
-                                )
-                                response = await self.twitter_client.create_tweet(
-                                    text=tweet
-                                )
-                            else:
-                                raise e
-                    else:
-                        response = await self.twitter_client.create_tweet(text=tweet)
+                if previous_tweet_id:
+                    response = await self.twitter_client.create_tweet(
+                        text=tweet, reply_to=previous_tweet_id
+                    )
+                else:
+                    response = await self.twitter_client.create_tweet(text=tweet)
 
-                    previous_tweet_id = response.id
-                    print(f"✅ Tweet posted: {tweet[:50]}...")
+                previous_tweet_id = response.id
+                print("✅ Tweet posted successfully")
 
-                    # Take longer break every few tweets
-                    if i > 0 and i % 3 == 0:
-                        await asyncio.sleep(60)
+                print("⏳ Waiting 2 seconds before next tweet...")
+                await asyncio.sleep(2)
 
-                except Exception as e:
-                    if "Tweet needs to be shorter" in str(e):
-                        print(f"⚠️ Tweet too long ({len(tweet)} chars), skipping")
-                        continue
-                    else:
-                        print(f"❌ Error posting tweet: {e}")
-                        return False
-
+            print("\n✅ Thread posted successfully!")
             return True
 
         except Exception as e:
@@ -484,7 +453,7 @@ class GmailMonitor:
                 print("Thank you for using Gmail Monitor!")
                 break
             except Exception as e:
-                # print(f"\n❌ Error: {str(e)}")
+                print(f"\n❌ Error: {str(e)}")
                 await asyncio.sleep(10)
 
 

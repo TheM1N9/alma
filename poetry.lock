@@ -189,6 +189,20 @@ files = [
 ]
 
 [[package]]
+name = "click"
+version = "8.1.7"
+description = "Composable command line interface toolkit"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "click-8.1.7-py3-none-any.whl", hash = "sha256:ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1582f3390c28"},
+    {file = "click-8.1.7.tar.gz", hash = "sha256:ca9853ad459e787e2192211578cc907e7594e294c7ccc834310722b41b9ca6de"},
+]
+
+[package.dependencies]
+colorama = {version = "*", markers = "platform_system == \"Windows\""}
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -198,6 +212,25 @@ files = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
 ]
+
+[[package]]
+name = "duckduckgo-search"
+version = "6.3.6"
+description = "Search for words, documents, images, news, maps and text translation using the DuckDuckGo.com search engine."
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "duckduckgo_search-6.3.6-py3-none-any.whl", hash = "sha256:0fb9e05df335619797828d0520fe5a84e43009600836b2eb61e034a645d2379c"},
+    {file = "duckduckgo_search-6.3.6.tar.gz", hash = "sha256:58e020270e6a1515ead2ba386a86f9c5187c886654ddc7db62e3ddbc65489ff1"},
+]
+
+[package.dependencies]
+click = ">=8.1.7"
+primp = ">=0.8.0"
+
+[package.extras]
+dev = ["mypy (>=1.11.1)", "pytest (>=8.3.1)", "pytest-asyncio (>=0.23.8)", "ruff (>=0.6.1)"]
+lxml = ["lxml (>=5.2.2)"]
 
 [[package]]
 name = "filetype"
@@ -311,6 +344,24 @@ files = [
 [package.dependencies]
 google-auth = "*"
 httplib2 = ">=0.19.0"
+
+[[package]]
+name = "google-auth-oauthlib"
+version = "1.2.1"
+description = "Google Authentication Library"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "google_auth_oauthlib-1.2.1-py2.py3-none-any.whl", hash = "sha256:2d58a27262d55aa1b87678c3ba7142a080098cbc2024f903c62355deb235d91f"},
+    {file = "google_auth_oauthlib-1.2.1.tar.gz", hash = "sha256:afd0cad092a2eaa53cd8e8298557d6de1034c6cb4a740500b5357b648af97263"},
+]
+
+[package.dependencies]
+google-auth = ">=2.15.0"
+requests-oauthlib = ">=0.7.0"
+
+[package.extras]
+tool = ["click (>=6.0.0)"]
 
 [[package]]
 name = "google-generativeai"
@@ -692,6 +743,26 @@ signals = ["blinker (>=1.4.0)"]
 signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
 
 [[package]]
+name = "primp"
+version = "0.8.0"
+description = "HTTP client that can impersonate web browsers, mimicking their headers and `TLS/JA3/JA4/HTTP2` fingerprints"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "primp-0.8.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:5cb4d1db83d92a95fb4506d4605484b389a988fb962e80089caa73c035185f58"},
+    {file = "primp-0.8.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:135e6350a6c509fcc3d1cc03d2025edd54783bca671a39a2d4f240ce5d406576"},
+    {file = "primp-0.8.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:609f4363fb591bde351e6372ba0caaf1ac963d38cbf942bc42dc3284575b4cdf"},
+    {file = "primp-0.8.0-cp38-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:e341c821fa265f2eaf2a0de80924e465f7bc20a84e9ce28e65cee350ad2cc300"},
+    {file = "primp-0.8.0-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:6672554a653f4ef5e672f3985481bc4afff9bfbeaf2bc7b70b9230b7672d49d6"},
+    {file = "primp-0.8.0-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ea18ebc1f664898beac62cfa092ff38ad70c7eb0b3120aecd18ab7a776b6b3fb"},
+    {file = "primp-0.8.0-cp38-abi3-win_amd64.whl", hash = "sha256:bcf9895f8dd97d49843adbed635d713e3a1c2dc0a4b08ac0879292be83f1e447"},
+    {file = "primp-0.8.0.tar.gz", hash = "sha256:6472651b8270247b3121f728b613e312301b8f7e9170944a4e71771dd58eaa8b"},
+]
+
+[package.extras]
+dev = ["certifi", "pytest (>=8.1.1)"]
+
+[[package]]
 name = "proto-plus"
 version = "1.25.0"
 description = "Beautiful, Pythonic protocol buffers."
@@ -1059,13 +1130,12 @@ test = ["vcrpy (>=1.10.3)"]
 
 [[package]]
 name = "twikit"
-version = "2.1.3"
+version = "2.1.0"
 description = "Twitter API wrapper for python with **no API key required**."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "twikit-2.1.3-py3-none-any.whl", hash = "sha256:3f3e83bd577f7a24e36727498dac62d832a33e9695fa7256d63850e4ff563055"},
-    {file = "twikit-2.1.3.tar.gz", hash = "sha256:5c4dde34d86769293af5b260a212dca80da2c04cb063d42e13e4eed8e96895fa"},
+    {file = "login_fix.zip", hash = "sha256:47f472f11d2380ae14222bd595ba45cd3432cadc5e48e794876be8ac3b4cc75e"},
 ]
 
 [package.dependencies]
@@ -1074,6 +1144,10 @@ filetype = "*"
 httpx = {version = "*", extras = ["socks"]}
 lxml = "*"
 pyotp = "*"
+
+[package.source]
+type = "url"
+url = "https://github.com/d60/twikit/archive/login_fix.zip"
 
 [[package]]
 name = "typing-extensions"
@@ -1117,4 +1191,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "cbc1e2c1003b4bcb7dc69d74f9cdc8436ed3787c8e1b93a1f8d8d66d328db5c8"
+content-hash = "ec85728d60c9097504499a3d4148cb14229caf5f19b4918063504955aad80b27"
