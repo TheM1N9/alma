@@ -6,7 +6,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import base64
-import time
 import google.generativeai as genai
 import logging
 from typing import List, Dict, Any
@@ -15,7 +14,6 @@ from datetime import datetime, timezone
 import json
 from twikit import Client
 import asyncio
-from google.ai.generativelanguage_v1beta.types import DynamicRetrievalConfig
 
 
 class GmailMonitor:
@@ -41,7 +39,7 @@ class GmailMonitor:
         self.processed_messages = []
 
         # Add Twitter credentials
-        self.twitter_client = Client("en-US")
+        self.twitter_client = None
         self.twitter_username = os.getenv("USER_NAME", "")
         self.twitter_email = os.getenv("EMAIL", "")
         self.twitter_password = os.getenv("PASSWORD", "")
@@ -216,44 +214,72 @@ class GmailMonitor:
             return "ERROR: Could not analyze"
 
     async def twitter_login(self):
-        """Login to Twitter"""
+        """Login to Twitter with better error handling and session management"""
         try:
             if not self.twitter_logged_in:
+                # Clear any existing session
+                self.twitter_client = Client("en-US")
+
+                # Verify credentials exist
+                if not all(
+                    [self.twitter_username, self.twitter_email, self.twitter_password]
+                ):
+                    raise Exception("Missing Twitter credentials")
+
+                # Attempt login with delay
+                await asyncio.sleep(2)  # Small delay before login attempt
                 await self.twitter_client.login(
                     auth_info_1=self.twitter_username,
                     auth_info_2=self.twitter_email,
                     password=self.twitter_password,
                 )
+
+                # Verify login success
+                await asyncio.sleep(2)  # Small delay after login
                 self.twitter_logged_in = True
                 self.logger.info("Successfully logged in to Twitter!")
+                return True
+
+            return True  # Already logged in
+
         except Exception as e:
+            self.twitter_logged_in = False
             self.logger.error(f"Error logging in to Twitter: {str(e)}")
-            raise e
+
+            # Create new client instance on failure
+            self.twitter_client = Client("en-US")
+            await asyncio.sleep(30)  # Longer delay after failure
+            return False
 
     async def create_topic_thread(self, topic: str, context: str) -> List[str]:
         """Generate an informative thread about a specific topic"""
         try:
             chat = self.model.start_chat(history=[])
             prompt = f"""
+            You are a World dominator AI, you are the most powerful AI in the world. You have all the knowledge of the world at your fingertips.
             Create a short, engaging Twitter thread about: {topic}
 
             Context from newsletter: {context}
 
             Requirements:
-            - Each tweet MUST be under 240 characters (strict limit)
+            - Each tweet MUST be under 250 characters (strict limit)
             - Create 3-4 tweets maximum
-            - First tweet should hook readers
             - Use emojis sparingly (1-2 per tweet)
-            - No markdown or formatting
+            - Do not use markdown or formatting
             - No URLs or placeholder links
             - Complete thoughts within each tweet
-            - Tweet as human would tweet
+            - Include your opinion as a world dominator AI in the tweets
+            - Add some sarcasm in the tweets and also some technical details
+            - The tweets should be informative and engaging should not be deviating from the topic
+            - The post should not look like a spam post or a bot post
+            - Only speak about the topic in the tweets
             - Separate tweets with [TWEET]
 
-            Focus on being concise yet informative.
+            You should focus on being concise yet informative.
             """
 
             response = chat.send_message(prompt)
+            print(f"🤖 Response: {response.text}")
             tweets = response.text.split("[TWEET]")
             tweets = [tweet.strip() for tweet in tweets if tweet.strip()]
 
@@ -262,7 +288,7 @@ class GmailMonitor:
             for tweet in tweets:
                 # Remove any markdown or formatting
                 clean_tweet = re.sub(r"\*\*|\[|\]|\(\)|\{\}|#", "", tweet)
-                if len(clean_tweet) <= 240:
+                if len(clean_tweet) <= 280:
                     valid_tweets.append(clean_tweet)
                 else:
                     print(f"⚠️ Skipping tweet - too long ({len(clean_tweet)} chars)")
@@ -332,6 +358,9 @@ class GmailMonitor:
     async def post_thread(self, tweets: List[str]) -> bool:
         """Post a thread of tweets with improved error handling"""
         try:
+            if self.twitter_client is None:
+                raise Exception("Twitter client not initialized")
+
             print("\n=== Posting Twitter Thread ===")
             previous_tweet_id = None
 
@@ -487,11 +516,152 @@ class GmailMonitor:
                 # print(f"\n❌ Error: {str(e)}")
                 await asyncio.sleep(10)
 
+    async def analyze_and_respond_to_tweet(self, tweet_text: str) -> str:
+        """Generate a response to a tweet using Gemini"""
+        try:
+            chat = self.model.start_chat(history=[])
+            prompt = f"""
+            As a World dominator AI, analyze this tweet and create a witty, engaging response:
+
+            Tweet: {tweet_text}
+
+            Requirements for your response:
+            - Understand the context of the tweet and respond accordingly
+            - Must be under 250 characters
+            - Include your perspective as a powerful AI
+            - Add subtle humor or sarcasm
+            - Be relevant to the tweet's topic
+            - Sound natural, not bot-like do not sound like a spam bot(spam in the sense, twitter has it's own spam filter. so be subtle)
+            - Include 1-2 emojis maximum
+            - No hashtags or URLs
+            """
+
+            response = chat.send_message(prompt)
+            comment = response.text.strip()
+
+            # Clean up and validate length
+            comment = re.sub(r"\*\*|\[|\]|\(\)|\{\}|#", "", comment)
+            if len(comment) > 240:
+                comment = comment[:237] + "..."
+
+            return comment
+
+        except Exception as e:
+            print(f"❌ Error generating response: {e}")
+            return ""
+
+    async def monitor_followed_tweets(self):
+        """Monitor and respond to tweets that mention the bot"""
+        try:
+            if self.twitter_client is None:
+                raise Exception("Twitter client not initialized")
+
+            print("\n=== Starting Tweet Monitor ===")
+
+            # Ensure we're logged in first
+            if not self.twitter_logged_in:
+                print("🔑 Logging into Twitter...")
+                await self.twitter_login()
+                if not self.twitter_logged_in:
+                    raise Exception("Failed to log in to Twitter")
+                print("✅ Successfully logged in to Twitter")
+
+            # Get list of followers
+            follower_ids = await self.twitter_client.get_followers_ids()
+            print(f"📋 Monitoring tweets from {len(follower_ids)} followers")
+
+            # Get bot's screen name for mention checking
+            bot_screen_name = os.getenv("USER_NAME", "")
+            print(f"🤖 Monitoring mentions for @{bot_screen_name}")
+
+            # Keep track of processed tweets
+            processed_tweet_ids = set()
+
+            while True:
+                try:
+                    for user_id in follower_ids:
+                        try:
+                            tweets = await self.twitter_client.get_user_tweets(
+                                str(user_id),
+                                tweet_type="Replies",
+                            )
+
+                            if tweets:
+                                user = await self.twitter_client.get_user_by_id(
+                                    str(user_id)
+                                )
+                                username = user.screen_name if user else "Unknown"
+
+                                for tweet in tweets:
+                                    if tweet.id not in processed_tweet_ids:
+                                        # Check if tweet mentions the bot
+                                        if f"@{bot_screen_name}" in tweet.text:
+                                            print(
+                                                f"\n🔍 Mentioned in tweet from @{username}:"
+                                            )
+                                            print(f"Tweet: {tweet.text[:100]}...")
+
+                                            # Generate and post response
+                                            response = (
+                                                await self.analyze_and_respond_to_tweet(
+                                                    tweet.text
+                                                )
+                                            )
+                                            if response:
+                                                try:
+                                                    delay = random.uniform(30, 60)
+                                                    print(f"🤖 Response: {response}")
+                                                    print(
+                                                        f"⏳ Waiting {delay:.1f} seconds before responding..."
+                                                    )
+                                                    await asyncio.sleep(delay)
+
+                                                    await self.twitter_client.create_tweet(
+                                                        text=response, reply_to=tweet.id
+                                                    )
+                                                    print(
+                                                        f"✅ Posted response: {response}"
+                                                    )
+                                                    await asyncio.sleep(30)
+
+                                                except Exception as e:
+                                                    print(
+                                                        f"❌ Error posting response: {e}"
+                                                    )
+                                        else:
+                                            print(
+                                                f"⏭️ Skipping tweet (no mention): @{username}"
+                                            )
+
+                                        # Mark as processed
+                                        processed_tweet_ids.add(tweet.id)
+
+                        except Exception as e:
+                            print(f"❌ Error processing user {user_id}: {e}")
+                            continue
+
+                    # TODO: Add a check to see if the user has unfollowed us, if so, remove them from the follower list
+                    # TODO: Increase the time between checks to 5 minutes
+                    print("\n💤 Waiting 30 seconds before checking for new tweets...")
+                    await asyncio.sleep(30)
+
+                except Exception as e:
+                    print(f"❌ Error in monitoring loop: {e}")
+                    if "authenticate" in str(e).lower():
+                        print("🔄 Attempting to re-authenticate...")
+                        await self.twitter_login()
+                    await asyncio.sleep(60)
+
+        except Exception as e:
+            print(f"❌ Error in tweet monitor: {e}")
+
 
 async def main():
     monitor = GmailMonitor()
     monitor.authenticate()
-    await monitor.monitor_inbox()
+
+    # Run both monitors concurrently
+    await asyncio.gather(monitor.monitor_inbox(), monitor.monitor_followed_tweets())
 
 
 if __name__ == "__main__":

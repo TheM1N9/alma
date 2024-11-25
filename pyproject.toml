@@ -6,16 +6,16 @@ authors = ["TheM1N9 <manikanta9k7@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.10,<4.0"
 tweepy = "^4.14.0"
 requests = "^2.32.3"
 google-generativeai = "^0.8.3"
 python-dotenv = "^1.0.1"
-twikit = {url = "https://github.com/d60/twikit/archive/login_fix.zip"}
 google-auth-oauthlib = "^1.2.1"
 google-auth-httplib2 = "^0.2.0"
 google-api-python-client = "^2.154.0"
 duckduckgo-search = "^6.3.6"
+twikit = {url = "https://github.com/d60/twikit/archive/login_fix.zip"}
 
 
 [build-system]
